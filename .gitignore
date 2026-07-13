@@ -1,0 +1,9 @@
+# GAS 백엔드 코드 — 공개 배포 제외
+apps-script/
+
+# macOS
+.DS_Store
+
+# 에디터
+.vscode/
+*.swp
