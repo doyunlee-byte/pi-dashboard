@@ -106,7 +106,7 @@
   td{padding:9px 10px;border-bottom:1px solid #eef0f4;vertical-align:middle;}
   tr.store-row{cursor:pointer;}
   tr.store-row:hover{background:#f7f9fc;}
-  .badge{display:inline-block;padding:3px 9px;border-radius:20px;font-size:11.5px;font-weight:600;white-space:nowrap;}
+  .badge{display:inline-block;padding:3px 9px;border-radius:20px;font-size:11.5px;font-weight:600;white-space:nowrap;flex-shrink:0;}
   .badge.done{background:var(--green-bg);color:var(--green);}
   .badge.progress{background:var(--amber-bg);color:var(--amber);}
   .badge.wait{background:#eef0f4;color:var(--muted);}
@@ -164,9 +164,22 @@
   .preset-item{background:#fff;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;overflow:hidden;}
   .preset-row{display:flex;align-items:center;gap:10px;padding:11px 14px;cursor:pointer;transition:background .15s;}
   .preset-row:hover{background:#f7f8fa;}
-  .preset-store-name{font-weight:700;font-size:13px;color:var(--text);flex:1;}
+  .preset-name-col{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px;}
+  .preset-store-name{display:block;font-weight:700;font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .preset-owner-line{display:block;font-size:11px;color:var(--primary);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .preset-chevron{color:var(--muted);font-size:11px;flex-shrink:0;}
   .preset-checklist-body{padding:4px 14px 12px;border-top:1px solid var(--border);}
+  .preset-groups{display:flex;flex-direction:column;}
+  .preset-group{padding:10px 0;border-bottom:1px dashed #eef0f4;}
+  .preset-group:last-child{border-bottom:none;}
+  .preset-group-title{font-size:12px;font-weight:700;color:var(--primary);}
+  .preset-group-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;}
+  .preset-group-selectall{display:flex;align-items:center;gap:4px;font-size:10.5px;color:var(--muted);font-weight:500;cursor:pointer;flex-shrink:0;}
+  .preset-group-selectall input{width:13px;height:13px;cursor:pointer;accent-color:var(--primary);}
+  .preset-group-items{display:flex;flex-wrap:wrap;gap:6px 14px;}
+  .preset-chip{display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;padding:2px 0;}
+  .preset-chip input{width:16px;height:16px;cursor:pointer;accent-color:var(--primary);flex-shrink:0;}
+  .preset-chip.checked span{color:#9ca3af;text-decoration:line-through;}
 
   /* Store info grid */
   .store-info-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:3px 8px;background:#f7f8fa;border:1px solid #eef0f4;border-radius:6px;padding:8px 10px;margin:8px 0 10px;}
@@ -600,12 +613,15 @@ const PROJECT_CONFIG = {
   }
 };
 
-const PRESET_CHECKLIST_DEFAULT = [
-  "TID/MID 개별값 반영",
-  "출력장비 설정",
-  "배달매출 연동 설정",
-  "스탬프/쿠폰 적용 확인",
-  "프리셋 최종 확인"
+// 프리셋 체크리스트 항목: 프로젝트(코코호도/더본외식/향후 추가 프로젝트) 공통 고정 데이터.
+// 코코호도 "장비프리셋" 탭에서 ?mode=preset으로 받아 dedupe한 결과를 그대로 하드코딩한 것.
+const EQUIPMENT_PRESET_GROUPS = [
+  { depth2: "매장운영관리", labels: ["전달방식","테이블 사용여부","포스키맵사용여부","결제수단 선택","배리어프리 기능 켜기","로고설정","주방프린터 출력 시점","연동대상 / 연동매장번호","연동대상"] },
+  { depth2: "화면관리", labels: ["색상 설정","메인 색상","카테고리 설정","장바구니 위치","장바구니 색상","옵션화면 설정","옵션보기 설정","안내문구","제목","내점주문 버튼","이미지","버튼명","포장주문 버튼","DID 화면 운영","DID 레이아웃","DID 배경 색상","호출주문 배경 색상","호출주문 안내 문구","호출번호 리스트 색상","메인 호출번호 강조 색상","대기주문 배경 색상","대기주문 안내 문구","대기번호 리스트 색상"] },
+  { depth2: "장비관리", labels: ["듀얼모니터사용여부","옵션 추천 표기 여부","옵션 가격 앞 + 부호 표시 여부","KDS 완료처리 순번","메인화면 타입"] },
+  { depth2: "매장상품관리", labels: ["출력장비설정 유형","외부 주문 채널 출력 사용여부","KDS 주문서 완료탭 이동 기준","KDS 출력 상품 상태 관리"] },
+  { depth2: "브랜드운영관리", labels: ["-","적립방법선택","스탬프 서비스 운영여부"] },
+  { depth2: "스마트주문서비스", labels: ["브랜드 스마트 주문 \n 채널사용여부"] }
 ];
 const INSTALL_TEST_CHECKLIST_DEFAULT = [
   "현장 최소 세팅 및 사용 교육",
@@ -647,7 +663,9 @@ function ensureStoreLocal(key, bizNo){
   const p = ensureProjectLocal(key);
   if(!p.storeData[bizNo]){
     p.storeData[bizNo] = {
-      preset: mkChecklist(PRESET_CHECKLIST_DEFAULT),
+      preset: buildPresetChecklist(flattenPresetLabels(), null),
+      presetCompletedBy: '',
+      presetCompletedAt: '',
       installTest: mkChecklist(INSTALL_TEST_CHECKLIST_DEFAULT),
       inquiries: []
     };
@@ -685,13 +703,63 @@ async function fetchSheetStores(key){
       naverId: s.naverId || "",
       posCount: (s.posCount !== undefined && s.posCount !== "") ? s.posCount : "",
       onlineBizReg: s.onlineBizReg || "",
-      naverConnect: s.naverConnect || ""
+      naverConnect: s.naverConnect || "",
+      centerName: s.centerName || "",
+      installCompleteDate: s.installCompleteDate || "",
+      installStatus: s.installStatus || ""
     })).filter(s => s.bizNo && s.name);
     SHEET_ERROR[key] = null;
   }catch(err){
     SHEET_CACHE[key] = [];
     SHEET_ERROR[key] = "연동 실패: " + err.message;
   }
+}
+
+function getPresetGroups(){
+  return EQUIPMENT_PRESET_GROUPS;
+}
+function flattenPresetLabels(){
+  const out = [];
+  getPresetGroups().forEach(g => g.labels.forEach(l => out.push(l)));
+  return out;
+}
+function buildPresetChecklist(labels, existing){
+  const existingByLabel = {};
+  (existing || []).forEach(c => { existingByLabel[c.label] = c; });
+  return labels.map((label, i) => {
+    const prev = existingByLabel[label];
+    return {
+      id: "p" + i,
+      label: label,
+      checked: prev ? prev.checked : false,
+      checkedBy: prev ? prev.checkedBy : '',
+      checkedAt: prev ? prev.checkedAt : ''
+    };
+  });
+}
+function renderPresetChecklistGroups(bizNo, groupKey, list){
+  const byLabel = {};
+  list.forEach(c => { byLabel[c.label] = c; });
+  return getPresetGroups().map((g, gi) => {
+    const items = g.labels.map(label => byLabel[label]).filter(Boolean);
+    if(!items.length) return '';
+    const allChecked = items.every(c => c.checked);
+    return `<div class="preset-group">
+      ${g.depth2 ? `<div class="preset-group-head">
+        <div class="preset-group-title">${g.depth2}</div>
+        <label class="preset-group-selectall">
+          <input type="checkbox" ${allChecked?'checked':''} onchange="toggleGroupAll('${bizNo}','${groupKey}',${gi},this.checked)">
+          전체선택
+        </label>
+      </div>` : ''}
+      <div class="preset-group-items">
+        ${items.map(c => `<label class="preset-chip ${c.checked?'checked':''}">
+          <input type="checkbox" ${c.checked?'checked':''} onchange="toggleCheck('${bizNo}','${groupKey}','${c.id}')">
+          <span>${c.label}</span>
+        </label>`).join('')}
+      </div>
+    </div>`;
+  }).join('');
 }
 
 function installDone(store){ return /완료/.test(store.progress || ""); }
@@ -708,11 +776,11 @@ function getMergedStores(key){
   const p = ensureProjectLocal(key);
   const merged = sheetStores.map(s => {
     const local = ensureStoreLocal(key, s.bizNo);
-    return Object.assign({}, s, { source:"sheet", preset: local.preset, installTest: local.installTest, inquiries: local.inquiries });
+    return Object.assign({}, s, { source:"sheet", preset: local.preset, presetCompletedBy: local.presetCompletedBy, installTest: local.installTest, inquiries: local.inquiries });
   });
   p.manualStores.forEach(s => {
     const local = ensureStoreLocal(key, s.bizNo);
-    merged.push(Object.assign({}, s, { source:"manual", preset: local.preset, installTest: local.installTest, inquiries: local.inquiries }));
+    merged.push(Object.assign({}, s, { source:"manual", preset: local.preset, presetCompletedBy: local.presetCompletedBy, installTest: local.installTest, inquiries: local.inquiries }));
   });
   return merged;
 }
@@ -779,6 +847,21 @@ function badgePct(list){
   const p = pct(list);
   if(p===0) return `<span class="badge wait">대기</span>`;
   return `<span class="badge progress">${p}%</span>`;
+}
+function presetOwnerBadge(store){
+  return (isDone(store.preset) && store.presetCompletedBy)
+    ? `<span class="preset-owner-line">담당자: ${store.presetCompletedBy}</span>`
+    : '';
+}
+function renderPresetRowHeader(s, open){
+  return `<div class="preset-row" onclick="togglePresetAccordion('${s.bizNo}')">
+    <div class="preset-name-col">
+      <span class="preset-store-name">${s.brand} · ${s.name}</span>
+      ${presetOwnerBadge(s)}
+    </div>
+    ${badgePct(s.preset)}
+    <span class="preset-chevron">${open?'▲':'▼'}</span>
+  </div>`;
 }
 function badgeFinal(store){
   const st = finalStatus(store);
@@ -1012,6 +1095,9 @@ function storeInfoGrid(s){
     ['포스 대수',    s.posCount],
     ['전상등록여부', s.onlineBizReg],
     ['네이버커넥트', s.naverConnect],
+    ['센터명',       s.centerName],
+    ['설치완료일',   s.installCompleteDate],
+    ['설치여부',     s.installStatus],
   ];
   return `<div class="store-info-grid">${
     fields.map(([lbl,val])=>`<div class="store-info-item"><span class="store-info-label">${lbl}</span><span class="store-info-val">${(val!==undefined&&val!=='')?val:'-'}</span></div>`).join('')
@@ -1057,18 +1143,12 @@ function renderPresetPage(){
     listEl.innerHTML = stores.map(s=>{
       const open = presetOpenSet.has(s.bizNo);
       return `<div class="preset-item">
-        <div class="preset-row" onclick="togglePresetAccordion('${s.bizNo}')">
-          <span class="preset-store-name">${s.brand} · ${s.name}</span>
-          ${badgePct(s.preset)}
-          <span class="preset-chevron">${open?'▲':'▼'}</span>
-        </div>
+        ${renderPresetRowHeader(s, open)}
         ${open?`<div class="preset-checklist-body">
           ${storeInfoGrid(s)}
-          <ul class="checklist">
-            ${s.preset.map(c=>`<li class="${c.checked?'checked':''}">
-              <input type="checkbox" ${c.checked?'checked':''} onchange="toggleCheck('${s.bizNo}','preset','${c.id}')">
-              <span>${c.label}${c.checked&&c.checkedBy?`<span class="check-meta">(${c.checkedBy} ${c.checkedAt||''})</span>`:''}</span></li>`).join('')}
-          </ul>
+          <div class="preset-groups">
+            ${renderPresetChecklistGroups(s.bizNo, 'preset', s.preset)}
+          </div>
         </div>`:''}
       </div>`;
     }).join('') || `<div class="empty">${sheetEmptyMessage()}</div>`;
@@ -1133,17 +1213,17 @@ function handleFileUpload(evt){
   evt.target.value = "";
 }
 
-function toggleCheck(bizNo, group, checkId){
-  const local = ensureStoreLocal(CURRENT_PROJECT, bizNo);
-  const item = local[group].find(c=>c.id===checkId);
-  item.checked = !item.checked;
-  if(item.checked){
+function setItemChecked(item, checked){
+  item.checked = checked;
+  if(checked){
     item.checkedBy = currentUser ? currentUser.name : '';
     const now = new Date();
     item.checkedAt = (now.getMonth()+1)+'/'+now.getDate()+' '+String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
   } else {
     item.checkedBy = ''; item.checkedAt = '';
   }
+}
+function syncGroupCompletion(local, group){
   if(group === 'installTest'){
     if(isDone(local.installTest)){
       const t = new Date();
@@ -1152,6 +1232,33 @@ function toggleCheck(bizNo, group, checkId){
       local.installTestCompletedDate = null;
     }
   }
+  if(group === 'preset'){
+    if(isDone(local.preset)){
+      local.presetCompletedBy = currentUser ? currentUser.name : '';
+      const t = new Date();
+      local.presetCompletedAt = (t.getMonth()+1)+'/'+t.getDate()+' '+String(t.getHours()).padStart(2,'0')+':'+String(t.getMinutes()).padStart(2,'0');
+    } else {
+      local.presetCompletedBy = ''; local.presetCompletedAt = '';
+    }
+  }
+}
+function toggleCheck(bizNo, group, checkId){
+  const local = ensureStoreLocal(CURRENT_PROJECT, bizNo);
+  const item = local[group].find(c=>c.id===checkId);
+  setItemChecked(item, !item.checked);
+  syncGroupCompletion(local, group);
+  saveLocal();
+  renderAll();
+}
+function toggleGroupAll(bizNo, group, groupIdx, checked){
+  const local = ensureStoreLocal(CURRENT_PROJECT, bizNo);
+  const groupDef = getPresetGroups()[groupIdx];
+  if(!groupDef) return;
+  const labelSet = new Set(groupDef.labels);
+  local[group].forEach(item => {
+    if(labelSet.has(item.label)) setItemChecked(item, checked);
+  });
+  syncGroupCompletion(local, group);
   saveLocal();
   renderAll();
 }
@@ -1434,18 +1541,12 @@ function renderDayPanel(){
     :dayStores.map(s=>{
         const open=presetOpenSet.has(s.bizNo);
         return `<div class="preset-item">
-          <div class="preset-row" onclick="togglePresetAccordion('${s.bizNo}')">
-            <span class="preset-store-name">${s.brand} · ${s.name}</span>
-            ${badgePct(s.preset)}
-            <span class="preset-chevron">${open?'▲':'▼'}</span>
-          </div>
+          ${renderPresetRowHeader(s, open)}
           ${open?`<div class="preset-checklist-body">
             ${storeInfoGrid(s)}
-            <ul class="checklist">
-              ${s.preset.map(c=>`<li class="${c.checked?'checked':''}">
-                <input type="checkbox" ${c.checked?'checked':''} onchange="toggleCheck('${s.bizNo}','preset','${c.id}')">
-                <span>${c.label}${c.checked&&c.checkedBy?`<span class="check-meta">(${c.checkedBy} ${c.checkedAt||''})</span>`:''}</span></li>`).join('')}
-            </ul>
+            <div class="preset-groups">
+              ${renderPresetChecklistGroups(s.bizNo, 'preset', s.preset)}
+            </div>
           </div>`:''}
         </div>`;
       }).join('');
