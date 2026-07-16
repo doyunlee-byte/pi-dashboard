@@ -133,7 +133,7 @@
   .modal-overlay.active{display:flex;}
   .modal{background:#fff;border-radius:12px;max-width:820px;width:100%;padding:24px 28px 28px;position:relative;}
   .modal-close{position:absolute;top:16px;right:18px;background:none;border:none;font-size:18px;cursor:pointer;color:var(--muted);}
-  .store-head-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:14px 0 18px;}
+  .store-head-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin:14px 0 18px;}
   .store-head-col{border:1px solid var(--border);border-radius:8px;padding:12px 14px;}
   .store-head-col h4{margin:0 0 8px;font-size:12.5px;color:var(--primary);}
   .store-head-col .row{display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0;color:var(--muted);font-weight:500;}
@@ -165,7 +165,8 @@
   .preset-row{display:flex;align-items:center;gap:10px;padding:11px 14px;cursor:pointer;transition:background .15s;}
   .preset-row:hover{background:#f7f8fa;}
   .preset-name-col{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px;}
-  .preset-store-name{display:block;font-weight:700;font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .preset-name-row{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0;}
+  .preset-store-name{flex:1;min-width:0;display:block;font-weight:700;font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .preset-owner-line{display:block;font-size:11px;color:var(--primary);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .preset-chevron{color:var(--muted);font-size:11px;flex-shrink:0;}
   .preset-checklist-body{padding:4px 14px 12px;border-top:1px solid var(--border);}
@@ -323,6 +324,21 @@
   .user-dropdown button{width:100%;text-align:left;background:none;border:none;padding:8px 12px;font-size:13px;cursor:pointer;border-radius:5px;color:var(--red);font-weight:600;font-family:inherit;}
   .user-dropdown button:hover{background:var(--red-bg);}
   .check-meta{font-size:10px;color:var(--muted);margin-left:4px;font-weight:400;}
+
+  /* ---- 백오피스 설정 알림 벨 (header) ---- */
+  .notif-bell{position:relative;cursor:pointer;padding:6px 10px;border-radius:8px;background:#f7f8fa;border:1px solid var(--border);font-size:15px;user-select:none;line-height:1;}
+  .notif-bell:hover{background:#eef0f4;}
+  .notif-bell .notif-count{position:absolute;top:-6px;right:-6px;background:var(--red);color:#fff;font-size:10px;font-weight:700;border-radius:10px;padding:1px 5px;min-width:16px;text-align:center;line-height:1.4;}
+  .notif-dropdown{position:absolute;top:100%;right:0;padding-top:8px;min-width:280px;z-index:200;display:none;}
+  .notif-bell:hover .notif-dropdown{display:block;}
+  .notif-dropdown-panel{background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 20px rgba(0,0,0,.12);max-height:340px;overflow-y:auto;padding:6px;}
+  .notif-item{padding:8px 10px;border-radius:6px;font-size:12.5px;cursor:pointer;}
+  .notif-item:hover{background:#f7f9fc;}
+  .notif-item b{color:var(--text);}
+  .notif-owner{color:var(--muted);font-size:11px;margin-top:2px;}
+  .notif-empty{padding:14px 10px;text-align:center;color:var(--muted);font-size:12px;}
+  .dday-badge{padding:2px 8px;border-radius:5px;font-size:11px;font-weight:700;background:var(--amber-bg);color:var(--amber);white-space:nowrap;}
+  .dday-badge.overdue{background:var(--red-bg);color:var(--red);}
 </style>
 </head>
 <body>
@@ -335,6 +351,12 @@
   </div>
   <div class="header-right">
     <span>업데이트 <b id="lastUpdated">-</b></span>
+    <div class="notif-bell" id="notifBell" title="백오피스 설정 미완료 알림">
+      🔔<span class="notif-count" id="notifCount" style="display:none">0</span>
+      <div class="notif-dropdown">
+        <div class="notif-dropdown-panel" id="notifDropdown"></div>
+      </div>
+    </div>
     <button class="btn gold sm" onclick="openNewProjectModal()">+ 신규 프로젝트</button>
     <div class="user-chip" id="userChip" style="display:none">
       <div>
@@ -780,6 +802,109 @@ async function fetchSheetStores(key){
   }
 }
 
+/* ============================================================
+   백오피스 설정 연동 (세팅팀 API)
+   - 세팅팀이 자체 사이트에서 매장 백오피스 설정을 진행 → 읽기전용 API로 값을 가져와 완료여부를 검수.
+   - 개발팀 API 키 발급 대기중 → apiUrl이 비어있으면 mock 데이터로 동작.
+   - 실제 키/엔드포인트가 오면 BACKOFFICE_CONFIG.apiUrl(및 필요시 apiKey, requiredFields)만 채우면 됨.
+============================================================= */
+const BACKOFFICE_CONFIG = {
+  apiUrl: "",     // 예: "https://setting-team.example.com/api/stores/backoffice" (발급 후 채우기)
+  apiKey: "",     // 발급되는 읽기전용 키/토큰
+  // 완료 판별 기준 필드 — 실제 API 스펙 확정 전까지의 임시 가정. 스펙 오면 이 목록만 교체.
+  requiredFields: ["paymentMethod", "businessHours", "menuSync", "deliveryIntegration"]
+};
+const BACKOFFICE_FIELD_LABELS = {
+  paymentMethod: "결제수단", businessHours: "영업시간", menuSync: "메뉴연동", deliveryIntegration: "배달연동"
+};
+const MOCK_BACKOFFICE_SAMPLE = {
+  paymentMethod: "카드/현금/간편결제", businessHours: "09:00-22:00", menuSync: "연동완료", deliveryIntegration: "배민·요기요 연동"
+};
+let BACKOFFICE_CACHE = {}; // { projectKey: { bizNo: {필드:값} } }
+let BACKOFFICE_ERROR = {};
+
+function mockFieldSeed(bizNo, field){
+  const s = String(bizNo) + "_" + field;
+  let h = 0;
+  for(let i=0;i<s.length;i++) h = (h*31 + s.charCodeAt(i)) >>> 0;
+  return h;
+}
+function generateMockBackofficeSettings(store){
+  // API 키 발급 전 임시 mock: bizNo+필드명 기반 시드로 일부 필드를 비워 미완료 사례를 재현.
+  const fields = {};
+  BACKOFFICE_CONFIG.requiredFields.forEach(f => {
+    fields[f] = (mockFieldSeed(store.bizNo, f) % 4 === 0) ? "" : (MOCK_BACKOFFICE_SAMPLE[f] || "설정됨");
+  });
+  return fields;
+}
+async function fetchBackofficeSettings(key){
+  const stores = SHEET_CACHE[key] || [];
+  if(!BACKOFFICE_CONFIG.apiUrl){
+    const map = {};
+    stores.forEach(s => { map[s.bizNo] = generateMockBackofficeSettings(s); });
+    BACKOFFICE_CACHE[key] = map;
+    BACKOFFICE_ERROR[key] = null;
+    return;
+  }
+  try{
+    const res = await fetch(BACKOFFICE_CONFIG.apiUrl, {
+      headers: BACKOFFICE_CONFIG.apiKey ? { "Authorization": "Bearer " + BACKOFFICE_CONFIG.apiKey } : {}
+    });
+    const json = await res.json();
+    const map = {};
+    (json.stores || []).forEach(s => { map[String(s.bizNo || "").trim()] = s.fields || s; });
+    BACKOFFICE_CACHE[key] = map;
+    BACKOFFICE_ERROR[key] = null;
+  }catch(err){
+    BACKOFFICE_CACHE[key] = {};
+    BACKOFFICE_ERROR[key] = "백오피스 설정 연동 실패: " + err.message;
+  }
+}
+function evaluateBackofficeStatus(fields){
+  const missing = BACKOFFICE_CONFIG.requiredFields.filter(f => !fields || !fields[f]);
+  return { complete: missing.length === 0, missing };
+}
+// 설치일정 - 7일 이후부터 알림 대상 (자정 기준 날짜만 비교, 시/분은 무시)
+const BACKOFFICE_NOTIF_LEAD_DAYS = 7;
+function daysUntilInstall(installDate){
+  const target = parseEventDate(installDate);
+  if(!target) return null;
+  const now = new Date();
+  const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  return Math.round((target - todayMidnight) / 86400000);
+}
+function formatDDayLabel(diff){
+  if(diff === 0) return 'D-day';
+  return diff > 0 ? `D-${diff}` : `D+${Math.abs(diff)}`;
+}
+function isBackofficeNotifDue(store){
+  const diff = daysUntilInstall(store.installDate);
+  return diff !== null && diff <= BACKOFFICE_NOTIF_LEAD_DAYS;
+}
+function ensureBackofficeNotifiedSet(){
+  if(!LOCAL.backofficeNotified) LOCAL.backofficeNotified = [];
+  return LOCAL.backofficeNotified;
+}
+function notifyBackofficeIncomplete(store, missing){
+  // 담당자 챗 알림(Slack/카카오워크) 채널 확정 전 — 우선 콘솔 로그 + 대시보드 알림 벨로만 노출.
+  // 채널이 정해지면 여기서 webhook fetch(POST)로 교체하면 됨.
+  console.info(`[백오피스 미완료] ${store.brand}·${store.name} 담당자:${store.installOwner||'미배정'} 누락:${missing.map(f=>BACKOFFICE_FIELD_LABELS[f]||f).join(', ')}`);
+}
+function checkBackofficeNotifications(key){
+  const notified = ensureBackofficeNotifiedSet();
+  getMergedStores(key).forEach(s => {
+    const idx = notified.indexOf(s.bizNo);
+    const due = !s.backofficeComplete && isBackofficeNotifDue(s);
+    if(due && idx === -1){
+      notifyBackofficeIncomplete(s, s.backofficeMissing);
+      notified.push(s.bizNo);
+    } else if(!due && idx !== -1){
+      notified.splice(idx, 1); // 완료됐거나 D-7 범위 밖으로 나가면 알림 기록 제거 (다시 조건 충족 시 재알림)
+    }
+  });
+  saveLocal();
+}
+
 function getPresetGroups(){
   return EQUIPMENT_PRESET_GROUPS;
 }
@@ -865,16 +990,23 @@ function installStageLabel(store){
 function isDone(list){ return list && list.length>0 && list.every(c=>c.checked); }
 function pct(list){ if(!list || !list.length) return 0; return Math.round(list.filter(c=>c.checked).length/list.length*100); }
 
+function backofficeFieldsFor(key, bizNo){
+  return (BACKOFFICE_CACHE[key] || {})[bizNo];
+}
 function getMergedStores(key){
   const sheetStores = SHEET_CACHE[key] || [];
   const p = ensureProjectLocal(key);
+  const withBackoffice = extra => {
+    const bo = evaluateBackofficeStatus(backofficeFieldsFor(key, extra.bizNo));
+    return { backofficeComplete: bo.complete, backofficeMissing: bo.missing };
+  };
   const merged = sheetStores.map(s => {
     const local = ensureStoreLocal(key, s.bizNo);
-    return Object.assign({}, s, { source:"sheet", preset: local.preset, presetCompletedBy: local.presetCompletedBy, presetCompletedAt: local.presetCompletedAt, installTest: local.installTest, installTestCompletedDate: local.installTestCompletedDate, inquiries: local.inquiries });
+    return Object.assign({}, s, { source:"sheet", preset: local.preset, presetCompletedBy: local.presetCompletedBy, presetCompletedAt: local.presetCompletedAt, installTest: local.installTest, installTestCompletedDate: local.installTestCompletedDate, inquiries: local.inquiries }, withBackoffice(s));
   });
   p.manualStores.forEach(s => {
     const local = ensureStoreLocal(key, s.bizNo);
-    merged.push(Object.assign({}, s, { source:"manual", preset: local.preset, presetCompletedBy: local.presetCompletedBy, presetCompletedAt: local.presetCompletedAt, installTest: local.installTest, installTestCompletedDate: local.installTestCompletedDate, inquiries: local.inquiries }));
+    merged.push(Object.assign({}, s, { source:"manual", preset: local.preset, presetCompletedBy: local.presetCompletedBy, presetCompletedAt: local.presetCompletedAt, installTest: local.installTest, installTestCompletedDate: local.installTestCompletedDate, inquiries: local.inquiries }, withBackoffice(s)));
   });
   return merged;
 }
@@ -928,10 +1060,16 @@ async function onProjectChange(){
   renderAll();
 }
 async function ensureSheetLoaded(key){
-  if(SHEET_CACHE[key] === undefined) await fetchSheetStores(key);
+  if(SHEET_CACHE[key] === undefined){
+    await fetchSheetStores(key);
+    await fetchBackofficeSettings(key);
+    checkBackofficeNotifications(key);
+  }
 }
 async function refreshCurrentProject(){
   await fetchSheetStores(CURRENT_PROJECT);
+  await fetchBackofficeSettings(CURRENT_PROJECT);
+  checkBackofficeNotifications(CURRENT_PROJECT);
   renderAll();
 }
 
@@ -947,10 +1085,18 @@ function presetOwnerBadge(store){
     ? `<span class="preset-owner-line">담당자: ${store.presetCompletedBy}</span>`
     : '';
 }
+function badgeBackoffice(store){
+  return store.backofficeComplete
+    ? `<span class="badge done">백오피스 완료</span>`
+    : `<span class="badge issue">백오피스 미완료</span>`;
+}
 function renderPresetRowHeader(s, open){
   return `<div class="preset-row" onclick="togglePresetAccordion('${s.bizNo}')">
     <div class="preset-name-col">
-      <span class="preset-store-name">${s.brand} · ${s.name}</span>
+      <div class="preset-name-row">
+        <span class="preset-store-name">${s.brand} · ${s.name}</span>
+        ${badgeBackoffice(s)}
+      </div>
       ${presetOwnerBadge(s)}
     </div>
     ${badgePct(s.preset)}
@@ -967,6 +1113,28 @@ function badgeCS(store){
   const open = store.inquiries.filter(i=>i.status!=="처리완료").length;
   if(open===0) return `<span class="badge wait">0건</span>`;
   return `<span class="badge issue">${open}건</span>`;
+}
+function renderBackofficeNotif(){
+  const countEl = document.getElementById('notifCount');
+  const ddEl = document.getElementById('notifDropdown');
+  if(!countEl || !ddEl) return;
+  const dueList = getMergedStores(CURRENT_PROJECT).filter(s => !s.backofficeComplete && isBackofficeNotifDue(s));
+  if(dueList.length){
+    countEl.style.display = '';
+    countEl.textContent = dueList.length;
+  } else {
+    countEl.style.display = 'none';
+  }
+  ddEl.innerHTML = dueList.length
+    ? dueList.map(s => {
+        const diff = daysUntilInstall(s.installDate);
+        return `
+      <div class="notif-item" onclick="closeModal('storeModal');openStoreModal('${s.bizNo}')">
+        <div><b>${s.brand} · ${s.name}</b> <span class="dday-badge${diff<=0?' overdue':''}">${formatDDayLabel(diff)}</span></div>
+        <div class="notif-owner">담당: ${s.installOwner || '미배정'} · 누락: ${s.backofficeMissing.map(f=>BACKOFFICE_FIELD_LABELS[f]||f).join(', ')}</div>
+      </div>`;
+      }).join('')
+    : `<div class="notif-empty">백오피스 설정 미완료 매장이 없습니다.</div>`;
 }
 
 /* ---- 주간 날짜 헬퍼 ---- */
@@ -1592,6 +1760,11 @@ function openStoreModal(bizNo){
         <div class="row"><span>담당자</span><b>${s.installOwner || '-'}</b></div>
         <div class="row"><span>점포 진척도</span><b>${installStageLabel(s)}</b></div>
       </div>
+      <div class="store-head-col">
+        <h4>백오피스 설정 (세팅팀 연동)</h4>
+        <div class="row"><span>상태</span><b>${s.backofficeComplete ? '완료' : '미완료'}</b></div>
+        ${s.backofficeComplete ? '' : `<div class="row"><span>누락 항목</span><b>${s.backofficeMissing.map(f=>BACKOFFICE_FIELD_LABELS[f]||f).join(', ')}</b></div>`}
+      </div>
     </div>
     <div class="stepper">
       ${STAGE_LABELS.map((lbl,i)=>`<div class="step ${st[i]?'done':''}">
@@ -1803,6 +1976,7 @@ function renderAll(){
   renderProcess();
   renderInstall();
   renderCS();
+  renderBackofficeNotif();
 }
 document.querySelectorAll('.view').forEach(el=>el.classList.toggle('active', el.dataset.view===currentView));
 (async function init(){
